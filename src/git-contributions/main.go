@@ -6,9 +6,9 @@ import (
 
 func main() {
 	var folder string
-	var email string
+	var emailPath string
 	flag.StringVar(&folder, "add", "", "add a new folder to scan for Git repositories")
-	flag.StringVar(&email, "email", "your@email.com", "the email to scan")
+	flag.StringVar(&emailPath, "path", "", "path to your emails")
 	flag.Parse()
 
 	if folder != "" {
@@ -16,5 +16,5 @@ func main() {
 		return
 	}
 
-	stats(email)
+	stats(emailPath)
 }

@@ -11,6 +11,22 @@ import (
 	"strings"
 )
 
+// scan given a path crawls it and its subfolders
+// searching for Git repositories
+func scan(path string) {
+	fmt.Printf("Found Folders:\n\n")
+	repositories := recursiveFolderFind(path)
+	addNewSliceElementsToFile(repositories)
+	fmt.Printf("\n\nSuccessfully added\n\n")
+}
+
+// recursiveFolderFind starts the recursive search of git repositories
+// living in the `folder` subtree
+func recursiveFolderFind(folder string) []string {
+	folders := make([]string, 0)
+	return scanGitFolders(folders, folder)
+}
+
 // scanGitFolders returns a list of subfolders of `folder` ending with `.git`.
 // Returns the base folder of the repo, the .git folder parent.
 // Recursively searches in the subfolders by passing an existing `folders` slice.
@@ -23,10 +39,10 @@ func scanGitFolders(folders []string, folder string) []string {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer f.Close()
 
 	// read files in last dir inside folder f
 	files, err := f.ReadDir(-1)
-	f.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,8 +61,11 @@ func scanGitFolders(folders []string, folder string) []string {
 				continue
 			}
 
-			// ignor if node_modules or vendor because dir is too large like nambo
+			// ignore if node_modules or vendor because dir is too large
 			if file.Name() == "node_modules" || file.Name() == "vendor" {
+				continue
+			} else if file.Name() == "Pictures" || file.Name() == "Library" || file.Name() == ".Trash" {
+				// another special case on my mac Photos -> no access
 				continue
 			}
 
@@ -57,27 +76,16 @@ func scanGitFolders(folders []string, folder string) []string {
 	return folders
 }
 
-// recursiveScanFolder starts the recursive search of git repositories
-// living in the `folder` subtree
-func recursiveFolderFind(folder string) []string {
-	folders := make([]string, 0)
-	return scanGitFolders(folders, folder)
+// addNewSliceElementsToFile given a slice of strings representing paths, stores them
+// to the filesystem
+func addNewSliceElementsToFile(newRepos []string) {
+	oldRepos := parseExistingRepos()
+	repoSlice := joinSlice(oldRepos, newRepos)
+	updateDotFile(repoSlice)
 }
 
-// // findDotFilePath returns the dot file path for the repos list.
-// // Creates it and the enclosing folder if it does not exist.
-// func findDotFilePath() string {
-// 	path, err := os.Getwd()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	dotFile := filepath.Join(path, ".gogitlocalstats")
-// 	return dotFile
-// }
-
-// parseFileLinesToSlice given a file path string, gets the content
-// of each line and parses it to a slice of strings.
+// parseExistingRepos parses the content of each line in `gitFile`
+// and returns a slice of strings with the existing repositories.
 func parseExistingRepos() []string {
 	f := openFile(gitFile)
 	defer f.Close()
@@ -87,22 +95,21 @@ func parseExistingRepos() []string {
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-	if err := scanner.Err(); err != nil {
-		if err != io.EOF {
-			panic(err)
-		}
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		panic(err)
 	}
 
 	return lines
 }
 
-// openFile opens the file located at `filePath`. Creates it if not existing.
+// openFile opens the file located at `filePath` for reading and writing.
+// Creates the file if it does not exist.
 func openFile(filePath string) *os.File {
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0755)
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_RDWR, 0755)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// file does not exist
-			_, err = os.Create(filePath)
+			f, err = os.Create(filePath)
 			if err != nil {
 				panic(err)
 			}
@@ -111,12 +118,22 @@ func openFile(filePath string) *os.File {
 			panic(err)
 		}
 	}
-
 	return f
 }
 
-// joinSlice adds the element of the `new` slice
-// into the `existing` slice, only if not already there
+// updateDotFile writes content to the file in `gitFile`, overwriting existing content.
+func updateDotFile(repos []string) {
+	content := strings.Join(repos, "\n")
+	err := os.WriteFile(gitFile, []byte(content), 0644)
+	if err != nil {
+		log.Fatalf("error writing to file: %v", err)
+	}
+
+	fmt.Print(content)
+}
+
+// joinSlice adds elements from `new` slice into the `existing` slice only if
+// not already present in `existing`.
 func joinSlice(existing []string, new []string) []string {
 	for _, file := range new {
 		if !sliceContains(existing, file) {
@@ -126,7 +143,7 @@ func joinSlice(existing []string, new []string) []string {
 	return existing
 }
 
-// sliceContains returns bool for if the repo contains a file
+// sliceContains checks if a `fileName` is present in `repoSlice`.
 func sliceContains(repoSlice []string, fileName string) bool {
 	for _, file := range repoSlice {
 		if file == fileName {
@@ -134,30 +151,4 @@ func sliceContains(repoSlice []string, fileName string) bool {
 		}
 	}
 	return false
-}
-
-// updateDotFile writes content to the file in path `filePath`
-// (overwriting existing content)
-func updateDotFile(repos []string) {
-	content := strings.Join(repos, "\n")
-	os.WriteFile(gitFile, []byte(content), 0755)
-
-	fmt.Print(content)
-}
-
-// addNewSliceElementsToFile given a slice of strings representing paths, stores them
-// to the filesystem
-func addNewSliceElementsToFile(newRepos []string) {
-	oldRepos := parseExistingRepos()
-	repoSlice := joinSlice(oldRepos, newRepos)
-	updateDotFile(repoSlice)
-}
-
-// scan given a path crawls it and its subfolders
-// searching for Git repositories
-func scan(path string) {
-	fmt.Printf("Found Folders:\n\n")
-	repositories := recursiveFolderFind(path)
-	addNewSliceElementsToFile(repositories)
-	fmt.Printf("\n\nSuccessfully added\n\n")
 }
